@@ -16,11 +16,11 @@ API_KEY = ''
 API_SECRET = b''
 
 # Тонкая настройка
-BASE = 'chp' 
+BASE = 'etc' 
 QUOTE = 'eth'
 
 ORDER_LIFE_TIME = 0.2   # через сколько минут отменять неисполненный ордер на покупку BASE
-STOCK_FEE = 0.002       # Комиссия, которую берет биржа (0.002 = 0.2%)
+#STOCK_FEE = 0.002       # Комиссия, которую берет биржа (0.002 = 0.2%)
 OFFERS_AMOUNT = 1       # Сколько предложений из стакана берем для расчета средней цены
 OFFERS_AMOUNT_2 = 1     # Тоже - для второй пары
 SATOSHI = 0.00000001
@@ -89,6 +89,14 @@ def call_api(**kwargs):
 
 
 # Уменьшено кол-во запросов к апи by Oleg Volkov
+def stock_fee():
+    fee = None
+    info = json.loads(requests.get("https://yobit.io/api/3/info/").text)['pairs']
+    for items in info:
+        fee = info[items]['fee']
+    return fee/100
+#print (stock_fee())
+#quit()
 def dom():
     # Получаем информацию по предложениям из стакана
     offers = json.loads(requests.get("https://yobit.io/api/3/depth/" + CURR_PAIR + "?limit=" +
@@ -131,11 +139,11 @@ def spended():
     pair, order_type, amount, rate, order_id, timestamp = history()
     if order_type == 'sell':
         get = amount * rate
-        get_fee = get * STOCK_FEE
+        get_fee = get * stock_fee()
         real_spend = round(get - get_fee, 8)  # Всего для SELL (без комсы)
     else:
         spend = amount * rate  # Всего для BUY (без комсы)
-        spend_fee = spend * STOCK_FEE
+        spend_fee = spend * stock_fee()
         real_spend = round(spend + spend_fee, 8)
     return real_spend
     
@@ -145,7 +153,7 @@ def amount_ins():
     # Сколько еще закупить для подстраховки?
     spend = spended()
     ins_spend = spend + (spend * MARTIN)
-    fee = (spend + (spend * MARTIN)) * STOCK_FEE
+    fee = (spend + (spend * MARTIN)) * stock_fee()
     return ins_spend - fee
 
 
@@ -159,7 +167,7 @@ def wanna_get():
     spend = spended()
     last_spend = (amount_ins() - can_spend()) / 2
     markup = spend * ROI
-    fee = spend * STOCK_FEE
+    fee = spend * stock_fee()
     get = last_spend + markup + fee
     return get
 
@@ -279,7 +287,7 @@ def main_flow():
                         print(prnstr.format(pair=CURR_PAIR,  amount_b=balances[BASE], base=BASE,
                                             rate=wanna_get() / float(balances[BASE]),
                                             all_spend=wanna_get() - (spended() * ROI),
-                                            amount_q=wanna_get() - (wanna_get() * STOCK_FEE),
+                                            amount_q=wanna_get() - (wanna_get() * stock_fee()),
                                             quote=QUOTE))
                         prnstr = ' Рынок падает, будем докупать с шагом {step:0.2f}% ' \
                                  'от предыдущей цены покупки.'
@@ -338,7 +346,7 @@ def main_flow():
                         # avg_price = sum(prices) / len(prices)
                         """
                             Посчитать, сколько валюты BASE можно купить.
-                            На сумму CAN_SPEND за минусом STOCK_FEE, и с учетом ROI
+                            На сумму CAN_SPEND за минусом stock_fee(), и с учетом ROI
                             ( = ниже средней цены рынка, с учетом комиссии и желаемого профита)
                         """
                         my_need_price = dom()[2]
@@ -409,7 +417,7 @@ try:
             amount=alt_balance,
             curr1=BASE,
             curr2=QUOTE,
-            wanna_get=wanna_get() - wanna_get() * STOCK_FEE,
+            wanna_get=wanna_get() - wanna_get() * stock_fee(),
             spended=spended() * 1,
             rate=wanna_get() / alt_balance,
             profit=profit()
