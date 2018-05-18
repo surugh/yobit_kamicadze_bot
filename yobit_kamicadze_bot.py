@@ -20,9 +20,7 @@ BASE = 'etc'
 QUOTE = 'eth'
 
 ORDER_LIFE_TIME = 0.2   # через сколько минут отменять неисполненный ордер на покупку BASE
-#STOCK_FEE = 0.002       # Комиссия, которую берет биржа (0.002 = 0.2%)
 OFFERS_AMOUNT = 1       # Сколько предложений из стакана берем для расчета средней цены
-OFFERS_AMOUNT_2 = 1     # Тоже - для второй пары
 SATOSHI = 0.00000001
 CAN_SPEND = 0.000101    # Сколько тратить QUOTE каждый раз при покупке BASE
 ROI = 0.003             # Какой навар нужен с каждой сделки? (0.001 = 0.1%)
@@ -323,7 +321,7 @@ def main_flow():
                     sell_rate = wanna_get() / my_amount
                     prnstr = ' Не ставим ордер подстраховки по курсу {rate:0.8f} кол-во: {amount:0.8f} {curr}\n' \
                              'Наша цена лучшая в стакане!'
-                    print(prnstr.format(curr=CURR_PAIR, rate=sell_rate - (sell_rate * MARTIN_STEP), amount=my_amount))
+                    print(prnstr.format(curr=QUOTE, rate=sell_rate - (sell_rate * MARTIN_STEP), amount=amount_ins()))
                     prnstr = ' ASK: {rate:0.8f} {curr}\n * Продаем кол-во: {amount:0.8f}'
                     print(prnstr.format(curr=CURR_PAIR, amount=my_amount, rate=dom()[0] - SATOSHI))
                     if DEBUG:
