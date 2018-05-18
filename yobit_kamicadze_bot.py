@@ -21,6 +21,7 @@ QUOTE = 'eth'
 
 ORDER_LIFE_TIME = 0.2   # через сколько минут отменять неисполненный ордер на покупку BASE
 OFFERS_AMOUNT = 1       # Сколько предложений из стакана берем для расчета средней цены
+OFFERS_AMOUNT_2 = 1     # Тоже - для второй пары
 SATOSHI = 0.00000001
 CAN_SPEND = 0.000101    # Сколько тратить QUOTE каждый раз при покупке BASE
 ROI = 0.003             # Какой навар нужен с каждой сделки? (0.001 = 0.1%)
@@ -87,18 +88,17 @@ def call_api(**kwargs):
 
 
 # Уменьшено кол-во запросов к апи by Oleg Volkov
+def pair_info():
+    return requests.get("https://yobit.io/api/3/info/").json()['pairs'][CURR_PAIR]
 def stock_fee():
-    fee = None
-    info = json.loads(requests.get("https://yobit.io/api/3/info/").text)['pairs']
-    for items in info:
-        fee = info[items]['fee']
-    return fee/100
-#print (stock_fee())
-#quit()
+    info = pair_info()
+    return info['fee']/100
+# print (stock_fee())
+# quit()
 def dom():
     # Получаем информацию по предложениям из стакана
-    offers = json.loads(requests.get("https://yobit.io/api/3/depth/" + CURR_PAIR + "?limit=" +
-                                     str(OFFERS_AMOUNT)).text)[CURR_PAIR]
+    offers = requests.get("https://yobit.io/api/3/depth/" + CURR_PAIR + "?limit=" +
+                                     str(OFFERS_AMOUNT)).json()[CURR_PAIR]
     ask = float(offers['asks'][0][0])
     ask_amount = float(offers['asks'][0][1])
     bid = float(offers['bids'][0][0])
@@ -273,8 +273,8 @@ def main_flow():
                     if float(balances.get(QUOTE, 0)) >= amount_ins():
                         prnstr = '\n *************** {pair} ***************\n ' \
                                  'Получаем информацию из стаканов\n ASK: {ask:0.8f} ' \
-                                 'amount: {ask_amount:0.8f} {quote}\n ' \
-                                 'BID: {bid:0.8f} amount: {bid_amount:0.8f} {base}'
+                                 'amount: {ask_amount:0.8f} {base}\n ' \
+                                 'BID: {bid:0.8f} amount: {bid_amount:0.8f} {quote}'
                         print(prnstr.format(pair=CURR_PAIR, ask=dom()[0], ask_amount=dom()[1],
                                             quote=QUOTE, bid=dom()[2], bid_amount=dom()[2], base=BASE))
                         # Инфа об ордере на продажу всего купленного
@@ -287,18 +287,29 @@ def main_flow():
                                             all_spend=wanna_get() - (spended() * ROI),
                                             amount_q=wanna_get() - (wanna_get() * stock_fee()),
                                             quote=QUOTE))
-                        prnstr = ' Рынок падает, будем докупать с шагом {step:0.2f}% ' \
+                        prnstr = ' Будем докупать с шагом не менее {step:0.2f}% ' \
                                  'от предыдущей цены покупки.'
                         print(prnstr.format(step=MARTIN_STEP * 100))
 
-                        # Создаем ордер подстраховки
-                        new_order = call_api(method="Trade", pair=CURR_PAIR, type="buy",
+                        if rate_ins() > dom()[2]:
+                            # Создаем ордер подстраховки
+                            new_order = call_api(method="Trade", pair=CURR_PAIR, type="buy",
+                                             rate=round(dom()[2], 8),
+                                             amount=round(amount_ins() / rate_ins(), 8))['return']
+   
+                            prnstr = ' Создан ордер подстраховки по курсу {rate:0.8f} затратим: {amount:0.8f} {curr}\n ' \
+                                 'ID {order_id}'
+                            print(prnstr.format(rate=dom()[2] + SATOSHI, amount=amount_ins(),
+                                            curr=QUOTE, order_id=new_order['order_id']))
+                        else:
+                            # Создаем ордер подстраховки
+                            new_order = call_api(method="Trade", pair=CURR_PAIR, type="buy",
                                              rate=round(rate_ins(), 8),
                                              amount=round(amount_ins() / rate_ins(), 8))['return']
    
-                        prnstr = ' Создан ордер подстраховки по курсу {rate:0.8f} затратим: {amount:0.8f} {curr}. ' \
-                                 'id ордера = {order_id}'
-                        print(prnstr.format(rate=rate_ins(), amount=amount_ins(),
+                            prnstr = ' Создан ордер подстраховки по курсу {rate:0.8f} затратим: {amount:0.8f} {curr}. ' \
+                                 'ID {order_id}'
+                            print(prnstr.format(rate=rate_ins(), amount=amount_ins(),
                                             curr=QUOTE, order_id=new_order['order_id']))
                     else:
                         prnstr = ' Создал бы ордер подстраховки по курсу {rate:0.8f} кол-во: {amount:0.8f} {curr}\n' \
