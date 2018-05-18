@@ -1,2 +1,2 @@
-# yobit_kamikadze_bot
+# yobit_kamicadze_bot
 YoBit Martingale Traiding Bot
