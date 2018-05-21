@@ -1,0 +1,166 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+
+import os
+import json
+import requests
+import urllib.parse
+import http.client
+import hmac
+import hashlib
+import algo
+
+# Вписываем свои ключи
+API_KEY = ''
+API_SECRET = b''
+
+# Тонкая настройка
+BASE = 'btc'
+QUOTE = 'rur'
+
+ORDER_LIFE_TIME = 0.2   # колько предложений из стакана берем для расчета средней цены
+OFFERS_AMOUNT = 1     # Тоже - для второй пары
+SATOSHI = 0.00000001
+CAN_SPEND = 1           # Сколько тратить QUOTE каждый раз при покупке BASE
+ROI = 0.003             # Какой навар нужен с каждой сделки? (0.001 = 0.1%)
+PROFIT_MARKUP_2 = 0.01
+MIN_SPREAD = 1.01       # Минимальный спред (1,01 = 1%)
+MARTIN = 2              # Мартингейл коэффициент (2 = 100%)
+MARTIN_STEP = 0.001     # Шаг мартина в процентах(0.001 = 0.1%)
+DEBUG = False           # True - выводить отладочную информацию, False - писать как можно меньше
+
+CURR_PAIR = BASE.lower() + "_" + QUOTE.lower()
+
+nonce_file = "./nonce"
+if not os.path.exists(nonce_file):
+    with open(nonce_file, "w") as out:
+        out.write('1')
+
+
+def call_api(**kwargs):
+    # При каждом обращении к торговому API увеличиваем счетчик nonce на единицу
+    with open(nonce_file, 'r+') as inp:
+        nonce = int(inp.read())
+        inp.seek(0)
+        inp.write(str(nonce + 1))
+        inp.truncate()
+
+    payload = {'nonce': nonce}
+
+    if kwargs:
+        payload.update(kwargs)
+    payload = urllib.parse.urlencode(payload)
+
+    hdigest = hmac.new(key=API_SECRET, digestmod=hashlib.sha512)
+    hdigest.update(payload.encode('utf-8'))
+    sign = hdigest.hexdigest()
+
+    headers = {"Content-type": "application/x-www-form-urlencoded", "Key": API_KEY, "Sign": sign}
+    conn = http.client.HTTPSConnection("yobit.io", timeout=60)
+    conn.request("POST", "/tapi/", payload, headers)
+    response = conn.getresponse().read()
+    conn.close()
+
+    try:
+        obj = json.loads(response.decode('utf-8'))
+
+        if 'error' in obj and obj['error']:
+            raise algo.ScriptError(obj['error'])
+        return obj
+    except json.decoder.JSONDecodeError:
+        # raise ScriptError('Ошибка анализа возвращаемых данных, получена строка', response)
+        raise algo.ScriptError(' Ошибка анализа возвращаемых данных, йобаны йобит :-)')
+
+
+def history():
+    pair = None
+    order_type = None
+    amount = None
+    rate = None
+    order_id = None
+    timestamp = None
+
+    # Запросили сделки по паре. Выводит видимо за сутки от последней к первой
+    history_data = call_api(method="TradeHistory", count=1, pair=CURR_PAIR)['return']
+
+    for items in history_data:
+        pair = history_data[items]['pair']
+        order_type = history_data[items]['type']
+        amount = history_data[items]['amount']
+        rate = history_data[items]['rate']
+        order_id = history_data[items]['order_id']
+        timestamp = history_data[items]['timestamp']
+    return pair, order_type, amount, rate, order_id, timestamp
+
+
+def spended():
+    pair, order_type, amount, rate, order_id, timestamp = history()
+    if order_type == 'sell':
+        get = amount * rate
+        get_fee = get * stock_fee()
+        real_spend = round(get - get_fee, 8)  # Всего для SELL (без комсы)
+    else:
+        spend = amount * rate  # Всего для BUY (без комсы)
+        spend_fee = spend * stock_fee()
+        real_spend = round(spend + spend_fee, 8)
+    return real_spend
+
+
+def amount_ins():
+    # Сколько всего было затрачено на покупки?
+    # Сколько еще закупить для подстраховки?
+    spend = spended()
+    ins_spend = spend + (spend * MARTIN)
+    fee = (spend + (spend * MARTIN)) * stock_fee()
+    return ins_spend - fee
+
+
+def rate_ins():
+    # Цена последнего BUY ордера - процент MARTIN_STEP
+    pair, order_type, amount, rate, order_id, timestamp = history()
+    return rate - (rate * MARTIN_STEP)
+
+
+def wanna_get():
+    spend = spended()
+    last_spend = (amount_ins() - can_spend()) / 2
+    markup = spend * ROI
+    fee = spend * stock_fee()
+    get = last_spend + markup + fee
+    return get
+
+
+def wanna_get_2():
+    get = spended() * PROFIT_MARKUP_2 + spended()
+    return get
+
+
+def profit():
+    return wanna_get() - spended()
+
+
+def pair_info():
+    return requests.get("https://yobit.io/api/3/info/").json()['pairs'][CURR_PAIR]
+
+
+def stock_fee():
+    info = pair_info()
+    return info['fee']/100
+
+
+def dom():
+    # Получаем информацию по предложениям из стакана
+    offers = requests.get("https://yobit.io/api/3/depth/" + CURR_PAIR + "?limit=" +
+                          str(OFFERS_AMOUNT)).json()[CURR_PAIR]
+    ask = float(offers['asks'][0][0])
+    ask_amount = float(offers['asks'][0][1])
+    bid = float(offers['bids'][0][0])
+    bid_amount = float(offers['bids'][0][1])
+    # print (' Получаем информацию из стаканов\n ASK: {ask:0.8f} amount: {ask_amount:0.8f}\n
+    # BID: {bid:0.8f} amount: {bid_amount:0.8f}'.format(ask = dom()[0], ask_amount = dom()[1], bid = dom()[2],
+    # bid_amount = dom()[2]))
+    return ask, ask_amount, bid, bid_amount
+
+
+def can_spend():
+    return CAN_SPEND
