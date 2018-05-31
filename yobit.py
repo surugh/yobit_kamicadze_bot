@@ -2,7 +2,6 @@
 """
     See https://yobit.net/en/api/
     Thanks for https://github.com/NanoBjorn/yobit
-    Best regards to Oleg Volkov https://github.com/oavolkov
 
 """
 import os
@@ -17,7 +16,7 @@ except ImportError:
 import requests
 
 
-__version__ = '0.2.6'
+__version__ = '0.2.8'
 
 
 class YobitException(Exception):
@@ -29,10 +28,13 @@ class YobitException(Exception):
 
 
 class YobitAPI(object):
+    decimalplaces = 8                          # For float to string conversion
+
     # __public_api_url = 'https://yobit.net/api/3'
     # __trade_api_url = 'https://yobit.net/tapi'
     __public_api_url = 'https://yobit.io/api/3'
     __trade_api_url = 'https://yobit.io/tapi'
+    __dpstr = '{:.' + str(decimalplaces) + 'f}'
 
     def __init__(self, api_key, api_secret, api_filepath='~/appdata/'):
         self.__filepath = api_filepath
@@ -200,7 +202,8 @@ class YobitAPI(object):
         :rtype : dict
 
         """
-        obj = self.__query_public_api('depth', pair.lower(), {'limit': limit})
+        options = {'limit': str(limit)}
+        obj = self.__query_public_api('depth', pair.lower(), options)
         return obj
 
     def trades(self, pair, limit=150):
@@ -217,7 +220,8 @@ class YobitAPI(object):
         :return: Current information about transactions
         :rtype : dict
         """
-        obj = self.__query_public_api('trades', pair.lower(), {'limit': limit})
+        options = {'limit': str(limit)}
+        obj = self.__query_public_api('trades', pair.lower(), options)
         return obj
 
     def get_info(self):
@@ -253,10 +257,13 @@ class YobitAPI(object):
         :rtype : dict
 
         """
-        obj = self.__query_trade_api('Trade', {'pair': pair.lower(),
-                                               'type': trade_type,
-                                               'rate': rate,
-                                               'amount': amount})
+        options = {
+            'pair': pair.lower(),
+            'type': trade_type,
+            'rate': self.__dpstr.format(rate),
+            'amount': self.__dpstr.format(amount)
+        }
+        obj = self.__query_trade_api('Trade', options)
         return obj
 
     def active_orders(self, pair):
@@ -286,7 +293,8 @@ class YobitAPI(object):
         :rtype : dict
 
         """
-        obj = self.__query_trade_api('OrderInfo', {'order_id': order_id})
+        options = {'order_id': str(order_id)}
+        obj = self.__query_trade_api('OrderInfo', options)
         return obj
 
     def cancel_order(self, order_id):
@@ -300,10 +308,11 @@ class YobitAPI(object):
         :rtype : dict
 
         """
-        obj = self.__query_trade_api('CancelOrder', {'order_id': order_id})
+        options = {'order_id': str(order_id)}
+        obj = self.__query_trade_api('CancelOrder', options)
         return obj
 
-    def trade_history(self, pair, from_start=0, count=1000, from_id=0, end_id=100000000000,
+    def trade_history(self, pair, count=1000, from_start=None, from_id=None, end_id=None,
                       order='DESC', since=None, end=None):
         """
         Used to retrieve transaction history.
@@ -313,17 +322,17 @@ class YobitAPI(object):
         :param pair: Pair of currencies, example 'ltc_btc'
         :type pair: str
 
-        :param from_start: Number of transaction from which response starts (default 0)
-        :type from_start: int
-
         :param count: Quantity of transactions in response (default 1000)
         :type count: int
 
+        :param from_start: Number of transaction from which response starts (default 0)
+        :type from_start: int, None
+
         :param from_id: ID of transaction from which response start (default 0)
-        :type from_id: int
+        :type from_id: int, None
 
         :param end_id: ID of trnsaction at which response finishes (default inf)
-        :type end_id: int
+        :type end_id: int, None
 
         :param order: Sorting order, 'ASC' for ascending and 'DESC' for descending
         :type order: str
@@ -340,18 +349,24 @@ class YobitAPI(object):
         """
         options = {
             'pair': pair.lower(),
-            'from': from_start,
-            'count': count,
-            'from_id': from_id,
-            'end_id': end_id,
+            'count': str(count),
             'order': order
         }
 
+        if from_start:
+            options['from'] = str(int(from_start))
+
+        if from_id:
+            options['from_id'] = str(int(from_id))
+
+        if end_id:
+            options['end_id'] = str(int(end_id))
+
         if since:
-            options['since'] = int(since)
+            options['since'] = str(int(since))
 
         if end:
-            options['end'] = int(end)
+            options['end'] = str(int(end))
 
         obj = self.__query_trade_api('TradeHistory', options)
         return obj
@@ -391,7 +406,11 @@ class YobitAPI(object):
         :rtype : dict
 
         """
-        options = {'coinName': coin_name, 'amount': amount, 'address': address}
+        options = {
+            'coinName': coin_name,
+            'amount': self.__dpstr.format(amount),
+            'address': address
+        }
         obj = self.__query_trade_api('WithdrawCoinsAddress', options)
         return obj
 
