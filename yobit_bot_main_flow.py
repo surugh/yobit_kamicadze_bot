@@ -30,6 +30,9 @@ def main_flow(stock_api, curr_pair, pair_data):
     # Выделяем из пары базовую и котируемую валюты
     base_curr, quote_curr = curr_pair.split('_')
     dec_places = pair_data[curr_pair.lower()]['decimal_places']
+    
+    # Чтобы все цифры для API бржи были с нужно точностью
+    stock_api.decimalplaces = dec_places
 
     # Получаем список активных ордеров
     ps = 'Пара {pair:s}. Получаем список активных ордеров.'
